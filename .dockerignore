@@ -1,0 +1,7 @@
+runs/
+inputs/
+.git/
+*.bak
+__pycache__/
+*.pyc
+forcefields/_extracted/

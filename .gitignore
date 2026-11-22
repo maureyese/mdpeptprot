@@ -1,0 +1,27 @@
+# results and anything a run generates
+runs/
+*.xtc
+*.trr
+*.tpr
+*.cpt
+*.edr
+*.mp4
+\#*#
+
+# python
+__pycache__/
+*.pyc
+
+# editor/patch backups
+*.bak
+*.bak[0-9]
+
+# regenerated from the .tgz by scripts/01_setup_forcefield.sh
+forcefields/_extracted/
+
+# inputs: keep only the 1WCY example
+inputs/*
+!inputs/1WCY_BD.pdb
+
+# generated batch job files
+jobs/batch/

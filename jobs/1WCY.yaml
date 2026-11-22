@@ -1,0 +1,24 @@
+# One job = one peptide-protein complex. This file is the ONLY thing that changes
+# between machines/runs; the container image stays the same.
+name: 1WCY_BD                  # run folder name under runs/
+input: inputs/1WCY_BD.pdb      # protein chain + peptide chain (3-6 aa)
+
+conditions:
+  ph: 7.4                      # drives ALL protonation, termini included
+  temperature_k: 310
+  salt_molar: 0.15             # NaCl
+
+production:
+  replicas: 3
+  ns: 5                        # per replica (short screen; extend the best later)
+
+hardware:
+  gpu_id: 0
+  # cores: 16                 # optional: total CPU cores this job may use (default: detected)
+  # threads_per_replica: 4    # optional: override the default cap of 4
+
+stages: [prepare, equilibrate, production, analyze]
+#   prepare     = validate input, force field, protonate, solvate, add ions
+#   equilibrate = minimization + NVT + NPT (with the equilibration gate)
+#   production  = build replicas + run them (waits until all finish)
+#   analyze     = contacts, hydrogen bonds, peptide movement per replica + a summary

@@ -1,0 +1,14 @@
+name: mdpeptprot
+channels: [conda-forge]
+dependencies:
+  - python=3.11
+  - gromacs=2026.3=nompi_cuda*
+  - pip
+  - pip:
+      - numpy==2.4.6
+      - pyyaml==6.0.4
+      - matplotlib==3.11.2
+      - pillow==13.0.0
+      - pdb2pqr==3.8.0
+      - propka==3.5.1
+      - MDAnalysis==2.11.0
