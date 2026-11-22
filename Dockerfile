@@ -19,6 +19,14 @@ RUN micromamba create -y -n md -c conda-forge \
     && micromamba clean -a -y
 ENV PATH=/opt/conda/envs/md/bin:$PATH
 
+# movies: PyMOL + ffmpeg in their own env (like the local mdmovie); the plot panels need matplotlib + Pillow
+RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglu1-mesa \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir matplotlib==3.11.2 pillow==13.0.0
+RUN micromamba create -y -n movie -c conda-forge pymol-open-source=3.1.0 ffmpeg=9.0.2 \
+    && micromamba clean -a -y
+ENV MOVIE_BIN=/opt/conda/envs/movie/bin
+
 # pipeline code (writable by any user, since the container runs as the host user)
 WORKDIR /app
 COPY scripts/ /app/scripts/

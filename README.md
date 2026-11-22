@@ -43,7 +43,10 @@ stops the job and names the stage. After changing parameters of a finished run, 
 | `production.ns` | length of each replica, ns | `config.sh` |
 | `hardware.gpu_id` | GPU to use | 0 |
 | `hardware.cores` / `hardware.threads_per_replica` | optional: total CPU cores / threads per replica (default: detected, max 4 per replica) | auto |
-| `stages` | any of `prepare`, `equilibrate`, `production`, `analyze` | all four |
+| `stages` | any of `prepare`, `equilibrate`, `production`, `analyze`, `movies` | the first four (`movies` runs only if you list it) |
+| `movies.replicas` | replicas to render, used only if `movies` is in `stages`, e.g. `[1]` or `[1, 2, 3]` | `[1]` |
+| `movies.frames` | frames rendered per movie (at most the frames available) | 300 |
+| `movies.fps` | video speed in frames per second (lower = slower video) | 10 |
 
 Unknown keys are rejected, so a typo cannot be silently ignored.
 
@@ -70,7 +73,7 @@ Scripts live in `scripts/` and are run in this order by `run_md.py`. Each can al
 | `09_monitor.sh` | | Read-only. Progress, speed (ns/day) and ETA of each replica, plus GPU status. Use `watch -n 60 "RUN_NAME=<name> bash scripts/09_monitor.sh"`. | |
 | `10_stop_production.sh` | | Stops all replicas gracefully (same as one Ctrl-C: finish the step, write a clean checkpoint). Never use `kill -9` on `mdrun`. Resume with `08`. | |
 | `11_analyze.sh` + `analyze_complex.py` | analyze | Analyzes every replica (see "Analysis outputs"). Refuses unfinished replicas unless `ANALYZE_PARTIAL=1`. | `analysis/`, `rep*/md_clean.xtc` |
-| `12_movies.sh` + `pymol_render.py` + `plot_frames.py` | (manual) | Two videos per replica (see "Movies"). Needs the separate `mdmovie` conda env (PyMOL + ffmpeg). | `movies/` |
+| `12_movies.sh` + `pymol_render.py` + `plot_frames.py` | movies (optional) | Two videos per replica (see "Movies"). `run_md.py` runs it once per replica in `movies.replicas` and skips replicas whose videos already exist. In the Docker image PyMOL and ffmpeg are included; on a conda setup they live in the separate `mdmovie` env. | `movies/` |
 | `progress.sh` | | Older progress helper, superseded by `09_monitor.sh`. | |
 
 ---
@@ -128,7 +131,8 @@ Residue numbers follow the **original PDB numbering**; peptide residues are numb
 
 ## Movies
 
-`RUN_NAME=<name> REP=1 bash scripts/12_movies.sh` writes, for one replica:
+Add `movies` to the job's `stages` (with the `movies:` keys from the table above), or run
+`RUN_NAME=<name> REP=1 bash scripts/12_movies.sh` by hand. For one replica it writes:
 
 - `rep<N>_structure.mp4`: the 3D binding only.
 - `rep<N>_structure_plots.mp4`: the same 3D view on the left; on the right, four plots that draw themselves as the movie
@@ -183,8 +187,10 @@ docker run --rm --gpus all --user "$(id -u):$(id -g)" \
 ```
 
 The image contains GROMACS, the force field, PDB2PQR/PROPKA, MDAnalysis and the scripts; inputs, job files and results
-live in the mounted folders. Movies are not part of the image. Validated: GPU access and the complete four-stage YAML job
-(prepare, equilibrate, production, analyze) inside the container, 3 replicas x 0.2 ns in 18 minutes on an RTX 5060.
+live in the mounted folders. PyMOL and ffmpeg are in the image too (their own `movie` environment), so the optional
+`movies` stage also runs in the container. Validated: GPU access, the complete four-stage YAML job (prepare, equilibrate,
+production, analyze) inside the container, 3 replicas x 0.2 ns in 18 minutes on an RTX 5060, and the `movies` stage
+(21 frames, both videos in 45 s; it needs no GPU).
 
 ## Running a new complex on a new machine
 
@@ -234,8 +240,9 @@ stage 01 extracts it automatically into `forcefields/_extracted/` the first time
    Do not use `kill -9`. Running the same job file again resumes: finished stages are skipped.
 7. **Read the results:** `runs/<name>/analysis/report.md` (and `summary.tsv` to compare complexes). Copy `runs/<name>/analysis/`
    off the machine when done.
-8. **Movies (optional).** They need the `mdmovie` conda env, so they run outside the container on a machine that has it:
-   `RUN_NAME=<name> REP=1 bash scripts/12_movies.sh`.
+8. **Movies (optional).** Add `movies` to `stages` in the job file, with a `movies:` block such as
+   `movies: {replicas: [1]}`. To make movies for a run that already finished, use a job file with `stages: [movies]`
+   and the same `name`; replicas that already have videos are skipped.
 
 Not yet implemented: extending the best peptides to longer runs.
 

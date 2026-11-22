@@ -17,8 +17,9 @@ hardware:
   # cores: 16                 # optional: total CPU cores this job may use (default: detected)
   # threads_per_replica: 4    # optional: override the default cap of 4
 
-stages: [prepare, equilibrate, production, analyze]
+stages: [prepare, equilibrate, production, analyze, movie]
 #   prepare     = validate input, force field, protonate, solvate, add ions
 #   equilibrate = minimization + NVT + NPT (with the equilibration gate)
 #   production  = build replicas + run them (waits until all finish)
 #   analyze     = contacts, hydrogen bonds, peptide movement per replica + a summary
+#   movie       = generate movies of the peptide-protein complex using PyMOL and ffmpeg

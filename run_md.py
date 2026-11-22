@@ -23,18 +23,20 @@ except ImportError:
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.join(ROOT, "scripts")
-ALL_STAGES = ["prepare", "equilibrate", "production", "analyze"]
+DEFAULT_STAGES = ["prepare", "equilibrate", "production", "analyze"]
+ALL_STAGES = DEFAULT_STAGES + ["movies"]   # movies: optional, only runs if listed in the job file
 SCHEMA = {
     "name": None, "input": None, "stages": None,
     "conditions": {"ph", "temperature_k", "salt_molar"},
     "production": {"replicas", "ns"},
     "hardware": {"gpu_id", "cores", "threads_per_replica"},
+    "movies": {"replicas", "frames", "fps"},
 }
 # settings this runner controls: cleared from the caller's environment first,
 # so nothing leaks in from the shell.
 MANAGED = ["RUN_NAME", "INPUT_PDB", "PH", "TEMPERATURE_K", "ION_CONC", "N_REPLICAS",
            "PRODUCTION_NS", "GPU_ID", "TOTAL_CORES", "MAX_THREADS_PER_REPLICA",
-           "WAIT", "FORCE_RELAUNCH"]
+           "WAIT", "FORCE_RELAUNCH", "MOVIE_REPS", "MOVIE_FRAMES", "MOVIE_FPS", "REP"]
 
 
 class JobError(Exception):
@@ -101,7 +103,18 @@ def load_job(path):
         if val is not None:
             env[key] = str(val)
 
-    stages = job.get("stages", ALL_STAGES)
+    mov = _section(job, "movies") or {}
+    for key, val in (("MOVIE_FRAMES", _num(mov, "movies", "frames", 10, 2000, True)),
+                     ("MOVIE_FPS", _num(mov, "movies", "fps", 1, 60, True))):
+        if val is not None:
+            env[key] = str(val)
+    reps = mov.get("replicas", [1])
+    if (not isinstance(reps, list) or not reps
+            or any(isinstance(r, bool) or not isinstance(r, int) or r < 1 for r in reps)):
+        raise JobError("movies.replicas must be a non-empty list of replica numbers, e.g. [1] or [1, 2, 3]")
+    env["MOVIE_REPS"] = " ".join(str(r) for r in reps)
+
+    stages = job.get("stages", DEFAULT_STAGES)
     if not isinstance(stages, list) or not stages or any(s not in ALL_STAGES for s in stages):
         raise JobError(f"'stages' must be a non-empty list drawn from {ALL_STAGES}")
     return name, env, [s for s in ALL_STAGES if s in stages]
@@ -121,6 +134,8 @@ def plan(stages):
         seq += ["06", "08"]
     if "analyze" in stages:
         seq.append("11")
+    if "movies" in stages:
+        seq.append("12")
     return seq
 
 
@@ -129,6 +144,22 @@ def script_for(code):
     if len(hits) != 1:
         raise JobError(f"expected exactly one scripts/{code}_*.sh, found {hits}")
     return os.path.join(SCRIPTS, hits[0])
+
+
+def run_movies(script, stage_env, logf, name, force):
+    """Stage 12 once per requested replica; a replica whose two videos already exist is skipped."""
+    for rep in stage_env.get("MOVIE_REPS", "1").split():
+        vdir = os.path.join(ROOT, "runs", name, "movies")
+        have = all(os.path.exists(os.path.join(vdir, f"rep{rep}_{k}.mp4")) for k in ("structure", "structure_plots"))
+        if have and not force:
+            print(f"[run_md] rep{rep}: movies already exist, skipping")
+            continue
+        e = dict(stage_env)
+        e["REP"] = rep
+        rc = run_stage(script, e, logf)
+        if rc != 0:
+            return rc
+    return 0
 
 
 def build_env(extra):
@@ -172,6 +203,8 @@ def run_job(path, dry, force):
             base = os.path.basename(script)
             if code == "01":
                 state = "run (always)"
+            elif code == "12":
+                state = "run (replicas without videos)"
             elif force:
                 state = "run (--force)"
             else:
@@ -186,7 +219,7 @@ def run_job(path, dry, force):
         logf.write(f"\n##### {datetime.datetime.now().isoformat(timespec='seconds')}  {path}\n")
         for code, script in scripts:
             base = os.path.basename(script)
-            if code != "01" and not force and is_done(script, env):
+            if code not in ("01", "12") and not force and is_done(script, env):
                 print(f"[run_md] {base}: already done, skipping")
                 continue
             stage_env = dict(env)
@@ -194,7 +227,10 @@ def run_job(path, dry, force):
                 stage_env["WAIT"] = "1"      # block until every replica really finished
             print(f"[run_md] >>> {base}")
             t0 = time.time()
-            rc = run_stage(script, stage_env, logf)
+            if code == "12":
+                rc = run_movies(script, stage_env, logf, name, force)
+            else:
+                rc = run_stage(script, stage_env, logf)
             if rc != 0:
                 print(f"[run_md] FAILED at {base} (exit {rc}). Fix it and run again: finished stages are skipped.")
                 return False
